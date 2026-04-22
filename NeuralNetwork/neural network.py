@@ -17,6 +17,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 
 gamma = 0.01
 
+random_factor = 10
+
 #output is between 0 and 1, so we need to multiply it by the max age of a crab to get the predicted age
 max_age = 30
 
@@ -25,7 +27,7 @@ max_age = 30
 def const_function(predicted, actual):
     return (actual - predicted) ** 2
 
-def derivative_const_function(predicted, actual):
+def derivative_cost_function(predicted, actual):
     return 2 * (actual - predicted)
 
 def sigmoid(x):
@@ -45,35 +47,77 @@ def relu_derivative(x):
 
 class neuron:
     def __init__(self, numWeights, bias, activation_function=sigmoid):
-        self.weights = [random.random() for _ in range(numWeights)]
+        self.weights = [random_factor * (random.random() - 0.5) for _ in range(numWeights)]
         self.bias = bias
+
+        self.activation = 0
         self.activation_function = activation_function
         self.derivativeActivation = sigmoid_derivative if activation_function == sigmoid else relu_derivative
-        self.errorderivative = 0
-        self.weightderivative = [0 for _ in range(numWeights)]
+        self.error_derivative = 0
+        self.weightsderivative = [0 for _ in range(numWeights)]
 
     def feedforward(self, inputs):
         total = 0
         for w, i in zip(self.weights, inputs):
             total += w * i
         total += self.bias
-        return self._activate(total)
+
+        self.activation = self._activate(total)
+
+        return self.activation
     
     def _activate(self, x):
         return self.activation_function(x)
     
-    def update_weights(self, inputs, last_layer_weights, next_layer_error):
+    def update_weights(self, inputs, next_layer_errors):
 
+        self.error_derivative = sum(next_layer_errors) * self.derivativeActivation(self.activation)
 
-        for i in range(len(self.weights)):
-            self.weightderivative[i] = self.derivativeActivation(self.feedforward(inputs)) * self.weights[i] * next_layer_error
-            self.weights[i] -= gamma * self.errorderivative * inputs[i]
+        self.weights = [w - gamma * self.error_derivative * i for w, i in zip(self.weights, inputs)]
+        self.bias -= gamma * self.error_derivative
 
-        self.bias -= gamma * self.errorderivative
+        totalderivative = sum(self.weights) * self.error_derivative
+        self.weightsderivative = [totalderivative * self.derivativeActivation(self.activation) for i in self.weights]
 
-        self.errorderivative = sum(last_layer_weights * next_layer_error) * self.derivativeActivation(self.feedforward(inputs))
          
+class finalNeuron:
+    def __init__(self, numWeights, bias, activation_function=sigmoid):
 
+        self.weights = [random_factor * (random.random() - 0.5) for _ in range(numWeights)]
+        self.bias = bias
+
+        self.activation = 0
+        self.activation_function = activation_function
+        self.derivativeActivation = sigmoid_derivative if activation_function == sigmoid else relu_derivative
+
+        self.weightsderivative = [0 for _ in range(numWeights)]
+        self.error_derivative = 0
+
+    def feedforward(self, inputs):
+        total = 0
+        for w, i in zip(self.weights, inputs):
+            total += w * i
+        total += self.bias
+
+        self.activation = self._activate(total)
+        return self.activation
+    
+    def _activate(self, x):
+        return self.activation_function(x)
+    
+    def update_weights(self, inputs, predicted, actual):
+
+        self.error_derivative = derivative_cost_function(predicted, actual) * self.derivativeActivation(self.activation)
+
+        self.weights = [w - gamma * self.error_derivative * i for w, i in zip(self.weights, inputs)]
+        self.bias -= gamma * self.error_derivative
+
+        totalderivative = sum(self.weights) * self.error_derivative
+        self.weightsderivative = [totalderivative * self.derivativeActivation(inputs[i]) for i in range(len(inputs))]
+
+
+        
+    
 
     
 
@@ -93,17 +137,35 @@ class layer:
             outputs.append(output)
         return outputs
     
-    def backpropagate(self, inputs, errors):
-        for neuron, error in zip(self.neurons, errors):
-            neuron.update_weights(inputs, error)
+    def backpropagate(self, inputs, next_layer_errors):
+        for i, neuron in enumerate(self.neurons):
+            # print(i)
+            # print([neuronError[i] for neuronError in next_layer_errors])
+
+            neuron.update_weights(inputs, [neuronError[i] for neuronError in next_layer_errors])
+        
 
 class inputLayer:
     def __init__(self, num_inputs):
         self.num_inputs = num_inputs
-        self.neurons = [neuron(0, 0) for _ in range(num_inputs)]
+        self.neurons = [neuron(1, 0) for _ in range(num_inputs)]
 
     def feedforward(self, inputs):
         return inputs
+    
+    def backpropagate(self):
+        pass
+
+class finalLayer:
+    def __init__(self, num_inputs, activation_function=sigmoid):
+        self.neurons = [finalNeuron(num_inputs, random.random(), activation_function=activation_function)]
+
+    def feedforward(self, inputs):
+        return [self.neurons[0].feedforward(inputs)]
+    
+    def backpropagate(self, inputs, actual):
+        predicted = self.neurons[0].activation * max_age
+        self.neurons[0].update_weights(inputs, predicted, actual)
 
 #neural network base functions
 
@@ -115,24 +177,25 @@ def predict(inputs):
 
 def backpropagation(network, inputs, actual):
     # Forward pass
-    outputs = [inputs]  # Store outputs of each layer
     for layer in network:
         inputs = layer.feedforward(inputs)
-        outputs.append(inputs)
+
 
     # Calculate error at the output layer
-    predicted = sum(outputs[-1]) * max_age
+    predicted = sum(inputs) * max_age
     error = const_function(predicted, actual)
-    derivative_error = derivative_const_function(predicted, actual)
 
     print(f"Cost: {error}")
 
     # Backward pass
     for i in range(len(network) - 1, 0, -1):
         layer = network[i]
-        prev_outputs = outputs[i - 1]
-        errors = [derivative_error] * len(layer.neurons)  # Simplified error distribution
-        layer.backpropagate(prev_outputs, errors)
+        prev_outputs = [neuron.activation for neuron in network[i - 1].neurons]
+        if i == len(network) - 1:
+            layer.backpropagate(prev_outputs, actual)
+        else:
+            next_layer_errors = [neuron.weightsderivative for neuron in network[i + 1].neurons]
+            layer.backpropagate(prev_outputs, next_layer_errors)
 
 def train():
     for index in range(len(train_data)):
@@ -140,8 +203,19 @@ def train():
         inputs = row[:-1]
         actual = int(row[-1])
         backpropagation(neural_network, inputs, actual)
+        if index % 100 == 0:
+            draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
+
         
-    draw_network()
+    draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
+
+def train_once():
+    index = random.randint(0, len(train_data) - 1)
+    row = train_data.iloc[index].tolist()
+    inputs = row[:-1]
+    actual = int(row[-1])
+    backpropagation(neural_network, inputs, actual)
+    draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
 
 def batch_train(batch_size=10):
     for index in range(0, len(train_data), batch_size):
@@ -151,8 +225,10 @@ def batch_train(batch_size=10):
             actual = int(row.tolist()[-1])
             backpropagation(neural_network, inputs, actual)
         
+        draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
         
-    draw_network()
+    draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
+
 
 
 #save & load functions
@@ -167,7 +243,9 @@ def load_model():
 
 def print_weights():
     for l in neural_network:
+        print(f"-------------- Layer {neural_network.index(l)} -------------- \n \n")
         for n in l.neurons:
+            print(f"  Neuron {l.neurons.index(n)}: \n")
             print(n.weights)
             print(n.bias)
 
@@ -221,10 +299,11 @@ def add_layer(neural_network, num_neurons, activation_function=sigmoid):
         neural_network.append(layer([neuron(len(neural_network[-1].neurons), random.random()) for _ in range(num_neurons)], activation_function=activation_function))
 
 neural_network = [inputLayer(num_inputs)]
-add_layer(neural_network, 6, activation_function=sigmoid)
-add_layer(neural_network, 5, activation_function=sigmoid)
-add_layer(neural_network, 1, activation_function=sigmoid)
 
+add_layer(neural_network, 6, activation_function=relu)
+add_layer(neural_network, 5, activation_function=relu)
+
+neural_network.append(finalLayer(len(neural_network[-1].neurons), activation_function=sigmoid))
 
 #display neural network
 
@@ -245,7 +324,7 @@ frame.pack(pady=20,expand=True, fill=BOTH, side=BOTTOM)
 buttonsFrame = tk.Frame(root, bg=background_color)
 buttonsFrame.pack(padx=50,pady=20,expand=False, side=TOP)
 
-trainButton = tk.Button(buttonsFrame, text="Train", command=train, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
+trainButton = tk.Button(buttonsFrame, text="Train", command=train_once, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
 trainButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
 
 trainButton = tk.Button(buttonsFrame, text="Batch Train", command=batch_train, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
@@ -285,7 +364,10 @@ def change_hex_brightness(hex_color, brightness):
 
     r, g, b = int(r * 255), int(g * 255), int(b * 255)
 
-    return f'#{r:02x}{g:02x}{b:02x}'
+
+    finalcolor = f'#{r:02x}{g:02x}{b:02x}'
+    S
+    return finalcolor[0:7]
 
 
 def centerX(total_width, layer_width, total_layers, layer_index):
@@ -317,7 +399,8 @@ def draw_network(layer_width=neuron_canvas.winfo_width()/len(neural_network), la
         neuronColor = "#526bbc"
         outlineColor = "#8ea5ef"
 
-        standardLineColor = "#8ea5ef"
+        standardLineColor = "#003cff"
+        stadardNegLineColor = "#ff0000"
 
 
         if l == 0:
@@ -327,23 +410,25 @@ def draw_network(layer_width=neuron_canvas.winfo_width()/len(neural_network), la
         #create neurons & connections 
         for i in range(len(neural_network[l].neurons)):
             
-            if l < len(neural_network) - 1: # Check if it's not the last layer
-                for j in range(len(neural_network[l + 1].neurons)):
+            if l > 0: # Check if it's not the first layer
+                for j in range(len(neural_network[l-1].neurons)):
                     #get weight of the connection
 
-                    if(l == 0):
-                        weight = 200
+
+                    weight = neural_network[l].neurons[i].weights[j]
+
+                    brightness = abs(weight)/random_factor # Normalize weight to 0.1-1.0
+
+                    if weight < 0:
+                        lineColor = change_hex_brightness(stadardNegLineColor, brightness)
                     else:
-                        weight = neural_network[l].neurons[i].weights[j]
+                        lineColor = change_hex_brightness(standardLineColor, brightness)
 
-                    brightness = max(0.1, min(1.0, abs(weight))) # Normalize weight to 0.1-1.0
-
-                    lineColor = change_hex_brightness(standardLineColor, brightness)
 
                     neuron_canvas.create_line(centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l), 
                                               centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l].neurons), i), 
-                                              centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l + 1), 
-                                              centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l + 1].neurons), j) , fill=lineColor, width=2) # Draw a line to represent the connection
+                                              centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l - 1), 
+                                              centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l - 1].neurons), j) , fill=lineColor, width=2) # Draw a line to represent the connection
 
             neuron_canvas.create_oval( centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l) - neuron_radius,
                                         centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l].neurons), i) - neuron_radius,
