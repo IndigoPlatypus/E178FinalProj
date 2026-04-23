@@ -2,6 +2,7 @@
 from colorsys import hsv_to_rgb, rgb_to_hsv
 from multiprocessing import connection
 import random
+import json
 
 import pandas as pd
 import numpy as np
@@ -14,21 +15,31 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 
+#TODO train good model --
+#     fix batch train --
+#     add attention
+#     optimize gamma/other parts of process
+#     refactor code to multiple files to make it easier to use
+#     add a graph/function showing accuracy improvements after x epochs 
+
+
 
 gamma = 0.01
 
-random_factor = 10
+random_factor = 1
+
+neural_network = []
 
 #output is between 0 and 1, so we need to multiply it by the max age of a crab to get the predicted age
 max_age = 30
 
 #math functions
 
-def const_function(predicted, actual):
+def cost_function(predicted, actual):
     return (actual - predicted) ** 2
 
 def derivative_cost_function(predicted, actual):
-    return 2 * (actual - predicted)
+    return (actual - predicted)
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
@@ -42,6 +53,28 @@ def relu(x):
 def relu_derivative(x):
     return 1 if x > 0 else 0
 
+#Training progress bar
+
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
 
 
 
@@ -60,26 +93,29 @@ class neuron:
         total = 0
         for w, i in zip(self.weights, inputs):
             total += w * i
+            
         total += self.bias
 
-        self.activation = self._activate(total)
+        self.activation = self.activation_function(total)
+
 
         return self.activation
-    
-    def _activate(self, x):
-        return self.activation_function(x)
-    
+        
     def update_weights(self, inputs, next_layer_errors):
 
         self.error_derivative = sum(next_layer_errors) * self.derivativeActivation(self.activation)
 
-        self.weights = [w - gamma * self.error_derivative * i for w, i in zip(self.weights, inputs)]
-        self.bias -= gamma * self.error_derivative
+        #print(f"error {self.error_derivative}, actder {self.derivativeActivation(self.activation)}, nextlerr {sum(next_layer_errors)}")
+       # print(f'wchange {[self.error_derivative * i for i in inputs]}')
 
-        totalderivative = sum(self.weights) * self.error_derivative
-        self.weightsderivative = [totalderivative * self.derivativeActivation(self.activation) for i in self.weights]
 
-         
+        self.weights = [w + gamma * self.error_derivative * i for w, i in zip(self.weights, inputs)]
+        self.bias += gamma * self.error_derivative
+
+        self.weightsderivative = [weight * self.error_derivative for weight in self.weights]
+
+        #print(f"newweights {self.weights}")
+              
 class finalNeuron:
     def __init__(self, numWeights, bias, activation_function=sigmoid):
 
@@ -97,6 +133,7 @@ class finalNeuron:
         total = 0
         for w, i in zip(self.weights, inputs):
             total += w * i
+            
         total += self.bias
 
         self.activation = self._activate(total)
@@ -109,19 +146,18 @@ class finalNeuron:
 
         self.error_derivative = derivative_cost_function(predicted, actual) * self.derivativeActivation(self.activation)
 
-        self.weights = [w - gamma * self.error_derivative * i for w, i in zip(self.weights, inputs)]
-        self.bias -= gamma * self.error_derivative
+        #print(f"Pred {predicted}, Act {actual}, error {self.error_derivative}, actder {self.derivativeActivation(self.activation)}")
+        #print(f'wchange {[self.error_derivative * i for w, i in zip(self.weights, inputs)]}')
 
-        totalderivative = sum(self.weights) * self.error_derivative
-        self.weightsderivative = [totalderivative * self.derivativeActivation(inputs[i]) for i in range(len(inputs))]
+        self.weights = [w + gamma * self.error_derivative * i for w, i in zip(self.weights, inputs)]
 
+        self.bias += gamma * self.error_derivative
 
-        
-    
+        #totalderivative = sum(self.weights) * self.error_derivative
+        self.weightsderivative = [weight * self.error_derivative for weight in self.weights]
 
-    
+       # print(f"newweights {self.weights}")
 
-#create layer of neurons
 class layer:
     def __init__(self, neurons, activation_function=sigmoid):
         self.neurons = neurons
@@ -139,18 +175,18 @@ class layer:
     
     def backpropagate(self, inputs, next_layer_errors):
         for i, neuron in enumerate(self.neurons):
-            # print(i)
             # print([neuronError[i] for neuronError in next_layer_errors])
 
             neuron.update_weights(inputs, [neuronError[i] for neuronError in next_layer_errors])
         
-
 class inputLayer:
     def __init__(self, num_inputs):
         self.num_inputs = num_inputs
         self.neurons = [neuron(1, 0) for _ in range(num_inputs)]
 
     def feedforward(self, inputs):
+        for i,neuron in enumerate(self.neurons):
+            neuron.activation = inputs[i]
         return inputs
     
     def backpropagate(self):
@@ -158,13 +194,14 @@ class inputLayer:
 
 class finalLayer:
     def __init__(self, num_inputs, activation_function=sigmoid):
+        self.activation_function = activation_function
         self.neurons = [finalNeuron(num_inputs, random.random(), activation_function=activation_function)]
 
     def feedforward(self, inputs):
         return [self.neurons[0].feedforward(inputs)]
     
     def backpropagate(self, inputs, actual):
-        predicted = self.neurons[0].activation * max_age
+        predicted = self.neurons[0].activation
         self.neurons[0].update_weights(inputs, predicted, actual)
 
 #neural network base functions
@@ -176,16 +213,15 @@ def predict(inputs):
     return inputs
 
 def backpropagation(network, inputs, actual):
+
     # Forward pass
     for layer in network:
         inputs = layer.feedforward(inputs)
 
 
     # Calculate error at the output layer
-    predicted = sum(inputs) * max_age
-    error = const_function(predicted, actual)
-
-    print(f"Cost: {error}")
+    predicted = sum(inputs)
+    error = cost_function(predicted, actual)
 
     # Backward pass
     for i in range(len(network) - 1, 0, -1):
@@ -196,12 +232,41 @@ def backpropagation(network, inputs, actual):
         else:
             next_layer_errors = [neuron.weightsderivative for neuron in network[i + 1].neurons]
             layer.backpropagate(prev_outputs, next_layer_errors)
+    
+    return error
 
+def backpropagation_test():
+
+    global neural_network
+
+    network = neural_network
+    inputs = [0.35,0.7]
+    actual = 0.5
+
+    for layer in network:
+        inputs = layer.feedforward(inputs)
+    
+    predicted = sum(inputs)
+    error = cost_function(predicted, actual)
+
+    print(f"Cost: {error}")
+
+    for i in range(len(network) - 1, 0, -1):
+        layer = network[i]
+
+        prev_outputs = [neuron.activation for neuron in network[i - 1].neurons]
+        print(f"l {i} prev outp {prev_outputs}")
+        if i == len(network) - 1:
+            layer.backpropagate(prev_outputs, actual)
+        else:
+            next_layer_errors = [neuron.weightsderivative for neuron in network[i + 1].neurons]
+            layer.backpropagate(prev_outputs, next_layer_errors)
+ 
 def train():
     for index in range(len(train_data)):
         row = train_data.iloc[index].tolist()
         inputs = row[:-1]
-        actual = int(row[-1])
+        actual = float(row[-1]) / max_age
         backpropagation(neural_network, inputs, actual)
         if index % 100 == 0:
             draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
@@ -209,11 +274,33 @@ def train():
         
     draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
 
+def train_epoch(epoch = 100000):
+
+    for i in range(epoch):
+        row = train_data.iloc[int(random.random() * len(train_data))].tolist()
+        inputs = row[:-1]
+        actual = float(row[-1]) / max_age
+
+        
+
+        if(i%100 == 0):
+            error = backpropagation(neural_network, inputs, actual)
+            printProgressBar(i,epoch,suffix=f"\n Cost:{error}")
+        else:
+            error = backpropagation(neural_network, inputs, actual)
+
+
+
+
+
+    draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
+    test()
+
 def train_once():
     index = random.randint(0, len(train_data) - 1)
     row = train_data.iloc[index].tolist()
     inputs = row[:-1]
-    actual = int(row[-1])
+    actual = float(row[-1]) / max_age
     backpropagation(neural_network, inputs, actual)
     draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
 
@@ -230,67 +317,137 @@ def batch_train(batch_size=10):
     draw_network( neuron_canvas.winfo_width()/len(neural_network), neuron_canvas.winfo_height()/len(neural_network[0].neurons) )
 
 
-
 #save & load functions
 
-def save_model():
+def save_model(filename="NeuralNetwork/model.net"):
+
+    #debug
     print_weights()
 
-def load_model():
-    pass
+
+    with open(filename, "w") as f:
+        # get num neurons in each layer
+
+        f.write(f"{[len(l.neurons) for l in neural_network]}\n")
+
+        for l in neural_network[1:]: #don't store 1st layer
+
+            f.write(f"{l.activation_function.__name__}\n")
+            for n in l.neurons:
+                floatWeights = [float(x) for x in n.weights]
+                f.write(f"{floatWeights}\n")
+                f.write(f"{n.bias}\n")
+
+def load_model(filename="NeuralNetwork/model.net"):
+
+    global neural_network
+
+    print("Loading Model")
+
+    with open(filename, "r") as f:
+        layer_sizes = eval(f.readline().strip())
+
+        neural_network = initialize_network(layer_sizes[0])
+
+        print(layer_sizes)
+
+
+        for size in layer_sizes[1:-1]:
+            activation_function = f.readline().strip()
+            add_layer(neural_network, size, activation_function=sigmoid if activation_function == "sigmoid" else relu)
+            print(f"New layer size: {size}")
+            print(f"New Layer Function: {activation_function}")
+        
+            for i, n in enumerate(neural_network[-1].neurons):
+                print(f"Neuron {i+1}")
+                weights = f.readline().strip()
+                n.weights = json.loads(weights)
+                print(f"Weights:{n.weights}" )
+                n.bias = float(f.readline().strip())
+                print(f"Bias: {n.bias}")
+                n.activation_function = sigmoid if neural_network[-1].activation_function == sigmoid else relu
+
+        #add final layers
+        activation_function = f.readline().strip()
+        finalize_network(neural_network, activation_function=sigmoid if activation_function == "sigmoid" else relu)
+        for n in neural_network[-1].neurons:
+            weights = f.readline().strip()
+            n.weights = json.loads(weights)
+            n.bias = float(f.readline().strip())
+            n.activation_function = sigmoid if neural_network[-1].activation_function == sigmoid else relu
+    
+    print(" ----------- Finished loading model ------------ \n\n")
+    print_weights()
+    draw_network()
 
 #debug functions
 
 def print_weights():
     for l in neural_network:
-        print(f"-------------- Layer {neural_network.index(l)} -------------- \n \n")
+        print(f"-------------- Layer {neural_network.index(l)} -------------- \n")
         for n in l.neurons:
-            print(f"  Neuron {l.neurons.index(n)}: \n")
+            print(f"  Neuron {l.neurons.index(n)}:")
             print(n.weights)
             print(n.bias)
+            print(f"  Activation: {n.activation} \n"
+                  f"  Error Derivative: {n.error_derivative} \n")
 
 #button functions
 
-def on_test():
+def test():
 
-    confidence_threshold = 0.1
+    confidence_threshold = 1
 
     accuracy = 0
+
     for index in range(len(test_data)):
         row = test_data.iloc[index].tolist()
         inputs = row[:-1]
-        actual = int(row[-1])
+        actual = float(row[-1])
 
-        predicted = sum(predict(inputs)) * max_age
+        predicted = sum(predict(inputs))
 
-        cost = const_function(predicted, actual)
-        print(f"Predicted: {predicted}, Actual: {actual}, cost: {cost}")
-        accuracy += 1 if abs(predicted - actual) < confidence_threshold else 0
+        cost = cost_function(predicted * max_age, actual)
 
-    accuracy /= len(test_data)
+        print(f"Predicted: {predicted * max_age}, Actual: {actual}, cost: {cost}")
+
+        accuracy += 1 if abs(predicted * max_age - actual) < confidence_threshold else 0
+
     print("----------------------------")
-    print(f"Accuracy: {accuracy}")
+    print(f"Confidence Threshold: {confidence_threshold} | Num Accurate: {accuracy} | Total num {len(test_data)} | Accuracy: {100 * accuracy / len(test_data) :5f} %")
+    
 
-#get data from csv file
+#get data and preprocess it
 
 data = pd.read_csv("CrabAgePrediction.csv")
-
-#reformat data into only numbers
-
 data["Sex"] = data["Sex"].map({"M": 1, "F": 2, "I": 3})
 
-#normalize data
-for column in data.columns:
-    if column != "Age":
-        data[column] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+# #normalize data
+# for column in data.columns:
+#      if column != "Age":
+#          data[column] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
 
-#split data into training and testing sets
+# split data into training and testing sets
 train_data = data.sample(frac=0.7, random_state=42)
 test_data = data.drop(train_data.index)
+
+#testing stuff
+
+#data = pd.read_csv("testFile.csv")
+
+#train_data = data
+#test_data = data
 
 #create a neural network
 
 num_inputs = len(data.columns) - 1 # Number of input features (excluding the target variable)
+
+print(num_inputs)
+
+def initialize_network(num_inputs=1):
+    network = [inputLayer(num_inputs)]
+    num_inputs = len(data.columns) - 1
+    return network
 
 def add_layer(neural_network, num_neurons, activation_function=sigmoid):
     if len(neural_network) == 0:
@@ -298,12 +455,17 @@ def add_layer(neural_network, num_neurons, activation_function=sigmoid):
     else:
         neural_network.append(layer([neuron(len(neural_network[-1].neurons), random.random()) for _ in range(num_neurons)], activation_function=activation_function))
 
-neural_network = [inputLayer(num_inputs)]
+def finalize_network(neural_network, activation_function=sigmoid):
+    neural_network.append(finalLayer(len(neural_network[-1].neurons), activation_function=activation_function))
+
+
+neural_network = initialize_network(num_inputs)
 
 add_layer(neural_network, 6, activation_function=relu)
 add_layer(neural_network, 5, activation_function=relu)
+add_layer(neural_network, 5, activation_function=relu)
 
-neural_network.append(finalLayer(len(neural_network[-1].neurons), activation_function=sigmoid))
+finalize_network(neural_network, activation_function=sigmoid)
 
 #display neural network
 
@@ -324,13 +486,13 @@ frame.pack(pady=20,expand=True, fill=BOTH, side=BOTTOM)
 buttonsFrame = tk.Frame(root, bg=background_color)
 buttonsFrame.pack(padx=50,pady=20,expand=False, side=TOP)
 
-trainButton = tk.Button(buttonsFrame, text="Train", command=train_once, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
+trainButton = tk.Button(buttonsFrame, text="Train", command=train, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
 trainButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
 
-trainButton = tk.Button(buttonsFrame, text="Batch Train", command=batch_train, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
-trainButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
+trainButton2 = tk.Button(buttonsFrame, text="Epoch Train", command=train_epoch, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
+trainButton2.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
 
-testButton = tk.Button(buttonsFrame, text="Test", command=on_test, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
+testButton = tk.Button(buttonsFrame, text="Test", command=test, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to test the neural network
 testButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
 
 saveButton = tk.Button(buttonsFrame, text="Save Model", command=save_model, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to save the model
@@ -338,6 +500,9 @@ saveButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
 
 loadButton = tk.Button(buttonsFrame, text="Load Model", command=load_model, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to load the model
 loadButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
+
+# loadTestButton = tk.Button(buttonsFrame, text="Train Test", command=backpropagation_test, bg=button_color, fg="white", font=("Arial", 12), relief=FLAT, bd=3) # Create a button to load the model
+# loadTestButton.pack(padx=50, pady=10,side=LEFT) # Add some padding around the button
 
 
 
@@ -369,7 +534,6 @@ def change_hex_brightness(hex_color, brightness):
     S
     return finalcolor[0:7]
 
-
 def centerX(total_width, layer_width, total_layers, layer_index):
     middle = total_width / 2
 
@@ -377,8 +541,6 @@ def centerX(total_width, layer_width, total_layers, layer_index):
         return middle - ((total_layers / 2 - layer_index) * layer_width)
     else:
         return middle - ((total_layers // 2 - layer_index) * layer_width)
-
-
 
 def centerY(total_height, layer_height, total_neurons, neuron_index):
     middle = total_height / 2
@@ -388,8 +550,11 @@ def centerY(total_height, layer_height, total_neurons, neuron_index):
     else:
         return middle - ((total_neurons // 2 - neuron_index) * layer_height)
 
+
 def draw_network(layer_width=neuron_canvas.winfo_width()/len(neural_network), layer_height=neuron_canvas.winfo_height()/len(neural_network[0].neurons)):
 
+    layer_width = neuron_canvas.winfo_width()/len(neural_network)
+    layer_height = neuron_canvas.winfo_height()/len(max(neural_network, key=lambda l: len(l.neurons)).neurons)
     neuron_canvas.delete("all") # Clear the canvas before redrawing
 
     neuron_radius = 20
