@@ -298,7 +298,8 @@ def train_once(neural_network,train_data,gamma=0.1):
     actual = float(row[-1])
     backpropagation(neural_network, inputs, actual,gamma)
 
-def batch_train(neural_network, train_data, batch_size=10,gamma=0.1):
+def batch_train(neural_network, train_data, batch_size=10,gamma=0.1): #DOES NOT WORK
+
     for index in range(0, len(train_data), batch_size):
         batch = train_data.iloc[index:index + batch_size]
         for _, row in batch.iterrows():

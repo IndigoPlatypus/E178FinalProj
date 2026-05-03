@@ -86,6 +86,7 @@ def draw_network(neuron_canvas, neural_network, max_weight):
         standardLineColor = "#003cff"
         stadardNegLineColor = "#ff0000"
 
+        layer_height = neuron_canvas.winfo_height()/len(neural_network[l].neurons)
 
         if l == 0:
             neuronColor = "#7b7e11"
@@ -95,9 +96,11 @@ def draw_network(neuron_canvas, neural_network, max_weight):
         for i in range(len(neural_network[l].neurons)):
             
             if l > 0: # Check if it's not the first layer
+
+                prev_layer_height = neuron_canvas.winfo_height()/len(neural_network[l-1].neurons)
+
                 for j in range(len(neural_network[l-1].neurons)):
                     #get weight of the connection
-
 
                     weight = neural_network[l].neurons[i].weights[j]
 
@@ -114,7 +117,7 @@ def draw_network(neuron_canvas, neural_network, max_weight):
                     neuron_canvas.create_line(centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l), 
                                               centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l].neurons), i), 
                                               centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l - 1), 
-                                              centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l - 1].neurons), j) , fill=lineColor, width=2) # Draw a line to represent the connection
+                                              centerY(neuron_canvas.winfo_height(), prev_layer_height, len(neural_network[l - 1].neurons), j) , fill=lineColor, width=2) # Draw a line to represent the connection
 
             neuron_canvas.create_oval( centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l) - neuron_radius,
                                         centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l].neurons), i) - neuron_radius,
