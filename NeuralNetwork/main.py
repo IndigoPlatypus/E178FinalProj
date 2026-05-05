@@ -36,16 +36,15 @@ max_age = 30
 def test_network():
 
     train_results = net.test(neural_network,train_data,confidenceThreshold/max_age)
-    test_results = net.test(neural_network,test_data,confidenceThreshold/max_age)
+    test_results = net.test(neural_network,data,confidenceThreshold/max_age)
 
     train_accuracy = 100 * train_results / len(train_data)
-    test_accuracy = 100 * test_results / len(test_data)
+    test_accuracy = 100 * test_results / len(data)
 
     print(f"TRAINING DATA || Confidence Threshold: {confidenceThreshold} | Num Accurate: {train_results} | Total num {len(train_data)} | Accuracy: { train_accuracy:5f} %")
     print(f"TEST DATA     || Confidence Threshold: {confidenceThreshold} | Num Accurate: {test_results} | Total num {len(test_data)} | Accuracy: { test_accuracy:5f} %")
 
     return train_accuracy,test_accuracy
-
 
 def train():
     global neural_network
@@ -132,17 +131,6 @@ def plot_epochs():
         root.update()
 
 
-    
-
-   
-    
-
-
-
-
-
-
-
 #get data and preprocess it
 
 data = pd.read_csv("CrabAgePrediction.csv")
@@ -160,24 +148,16 @@ data["Age"] /= max_age
 train_data = data.sample(frac=0.7, random_state=42)
 test_data = data.drop(train_data.index)
 
-
-
 #create a neural network
 num_inputs = len(data.columns) - 1 # Number of input features (excluding the target variable)
 
 neural_network = net.initialize_network(num_inputs)
-
-#net.print_weights(neural_network)
 
 net.add_layer(neural_network, 16, activation_function=net.relu)
 net.add_layer(neural_network, 8, activation_function=net.relu)
 net.add_layer(neural_network, 5, activation_function=net.relu)
 
 net.finalize_network(neural_network, activation_function=net.sigmoid)
-
-#net.print_weights(neural_network)
-
-
 
 #display neural network
 

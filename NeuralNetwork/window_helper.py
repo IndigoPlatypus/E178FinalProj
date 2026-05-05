@@ -80,23 +80,14 @@ def draw_network(neuron_canvas, neural_network, max_weight):
 
     for l in range(len(neural_network)):
 
-        neuronColor = "#526bbc"
-        outlineColor = "#8ea5ef"
-
         standardLineColor = "#003cff"
         stadardNegLineColor = "#ff0000"
 
         layer_height = neuron_canvas.winfo_height()/len(neural_network[l].neurons)
 
-        if l == 0:
-            neuronColor = "#7b7e11"
-            outlineColor = "#72720b"
-
-        #create neurons & connections 
+        #create connections 
         for i in range(len(neural_network[l].neurons)):
-            
             if l > 0: # Check if it's not the first layer
-
                 prev_layer_height = neuron_canvas.winfo_height()/len(neural_network[l-1].neurons)
 
                 for j in range(len(neural_network[l-1].neurons)):
@@ -119,12 +110,26 @@ def draw_network(neuron_canvas, neural_network, max_weight):
                                               centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l - 1), 
                                               centerY(neuron_canvas.winfo_height(), prev_layer_height, len(neural_network[l - 1].neurons), j) , fill=lineColor, width=2) # Draw a line to represent the connection
 
+            
+    for l in range(len(neural_network)): #create neurons
+        neuronColor = "#526bbc"
+        outlineColor = "#8ea5ef"
+
+        layer_height = neuron_canvas.winfo_height()/len(neural_network[l].neurons)
+
+        if l == 0:
+            neuronColor = "#7b7e11"
+            outlineColor = "#72720b"
+
+        for i in range(len(neural_network[l].neurons)):
+
             neuron_canvas.create_oval( centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l) - neuron_radius,
                                         centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l].neurons), i) - neuron_radius,
                                         centerX(neuron_canvas.winfo_width(), layer_width, len(neural_network), l) + neuron_radius,
                                         centerY(neuron_canvas.winfo_height(), layer_height, len(neural_network[l].neurons), i) + neuron_radius,
                                         fill=neuronColor,outline=outlineColor,width=5) # Draw a circle to represent the neuron
             neuron_canvas.pack(pady=0)
+
     
     return newMaxWeight
         
